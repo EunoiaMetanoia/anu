@@ -1,0 +1,42 @@
+name: Kernel Build mido
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+          description: 'Device'
+          default: 'mido'
+          required: true
+      repo:
+          description: 'Kernel source'
+          default: 'https://github.com/EunoiaMetanoia/med.git'
+          required: true
+      branch:
+          description: 'Kernel source branch'
+          default: 'fourteen'
+          required: true
+env:
+  TZ: Asia/Jakarta
+  DEVICE: ${{ github.event.inputs.device }}
+  REPO: ${{ github.event.inputs.repo }}
+  BRANCH: ${{ github.event.inputs.branch }}
+
+jobs:
+  kernel-build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Initializing environment
+        run: |
+
+          git clone https://github.com/akhilnarang/scripts x
+          cd x/setup && bash android_build_env.sh
+
+      - name: Compiling
+        run: |
+          if [ "${DEVICE}" = "mido" ]; then
+            wget https://raw.githubusercontent.com/EunoiaMetanoia/anu/main/scripts/medo.sh
+            bash mido.sh
+          else
+            echo "Device not supported yet"
+          fi
