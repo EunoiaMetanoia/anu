@@ -36,7 +36,7 @@ jobs:
         run: |
           if [ "${DEVICE}" = "mido" ]; then
             wget https://raw.githubusercontent.com/EunoiaMetanoia/anu/main/scripts/medo.sh
-            bash mido.sh
+            bash medo.sh
           else
             echo "Device not supported yet"
           fi
