@@ -40,3 +40,15 @@ jobs:
           else
             echo "Device not supported yet"
           fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build
+          path: |
+            artifacts/
+            *.zip
+            **/Image.gz-dtb
+            **/AnyKernel/*.zip
+          retention-days: 7
+          if-no-files-found: warn
