@@ -5,7 +5,7 @@ git clone $REPO -b $BRANCH kernel
 cd kernel || exit 1
 git clone --depth=1 https://github.com/malkist01/patch
 curl -LSs "https://raw.githubusercontent.com/malkist01/patch/main/add/patch.sh" | bash -s main
-curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/master/kernel/setup.sh" | bash -s master
+curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
 make mrproper
 echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS=y" >> ./arch/arm64/configs/mido_defconfig
