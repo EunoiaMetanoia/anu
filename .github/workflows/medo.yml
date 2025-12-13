@@ -26,20 +26,34 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Initializing environment
         run: |
-
           git clone https://github.com/akhilnarang/scripts x
           cd x/setup && bash android_build_env.sh
 
       - name: Compiling
         run: |
           if [ "${DEVICE}" = "mido" ]; then
-            wget https://raw.githubusercontent.com/EunoiaMetanoia/anu/main/scripts/medo.sh
+            wget -q https://raw.githubusercontent.com/EunoiaMetanoia/anu/main/scripts/medo.sh
+            chmod +x medo.sh
             bash medo.sh
           else
             echo "Device not supported yet"
           fi
+
+      - name: Verify artifacts
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Listing files ==="
+          ls -la
+          echo "=== Looking for artifacts ==="
+          find . -name "artifacts" -type d | xargs ls -la 2>/dev/null || true
+          echo "=== Looking for ZIP files ==="
+          find . -name "*.zip" -type f 2>/dev/null || true
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -47,8 +61,13 @@ jobs:
           name: kernel-build
           path: |
             artifacts/
-            *.zip
+            kernel/artifacts/
+            **/*.zip
             **/Image.gz-dtb
-            **/AnyKernel/*.zip
-          retention-days: 7
+          retention-days: 30
           if-no-files-found: warn
+
+      - name: Display build info
+        run: |
+          echo "✅ Build completed!"
+          echo "📦 Check the 'Artifacts' section below to download your kernel"
