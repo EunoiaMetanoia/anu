@@ -10,7 +10,7 @@ make mrproper
 echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS=y" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS_ALL=y" >> ./arch/arm64/configs/mido_defconfig
-echo "CONFIG_LOCAL_VERSION=-AfterMidniht" >> ./arch/arm64/configs/mido_defconfig
+echo "CONFIG_LOCAL_VERSION=-AfterMidnight" >> ./arch/arm64/configs/mido_defconfig
 echo "# CONFIG_LOCAL_VERSION_AUTO is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_BY=After" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_HOST=Midnight" >> ./arch/arm64/configs/mido_defconfig
@@ -148,8 +148,14 @@ zipping() {
     echo "Creating flashable ZIP: ${ZIP_NAME}"
     zip -r9 "${ZIP_NAME}" ./* || error_exit "zip creation"
     
-    # Copy ZIP back to kernel directory for artifact upload
+    # Copy ZIP back to kernel directory
     cp "${ZIP_NAME}" "${KERNEL_DIR}/" || error_exit "copy zip"
+    
+    # Juga copy ke root workspace untuk GitHub Actions
+    if [ -n "$GITHUB_WORKSPACE" ]; then
+        mkdir -p "${GITHUB_WORKSPACE}/artifacts"
+        cp "${ZIP_NAME}" "${GITHUB_WORKSPACE}/artifacts/" || echo "Failed to copy to GITHUB_WORKSPACE"
+    fi
     
     cd "${KERNEL_DIR}" || exit 1
 }
@@ -163,11 +169,45 @@ zipping || error_exit "zipping function"
 END=$(date +"%s")
 DIFF=$((END - START))
 echo "Build completed in $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)."
-echo "Kernel ZIP file is ready at: ${KERNEL_DIR}/AnyKernel/*.zip"
 
-# Keep the ZIP file accessible in the workspace root for GitHub Actions artifact upload
-mkdir -p "${KERNEL_DIR}/../artifacts"
-cp "${KERNEL_DIR}/AnyKernel"/*.zip "${KERNEL_DIR}/../artifacts/" 2>/dev/null || echo "No ZIP file found to copy to artifacts directory"
-cp "$IMAGE" "${KERNEL_DIR}/../artifacts/" 2>/dev/null || echo "No Image.gz-dtb found to copy to artifacts directory"
+# Cari file ZIP yang dibuat
+echo "=== Searching for ZIP files ==="
+find . -name "*.zip" -type f | head -5
+
+echo "=== Searching for Image.gz-dtb ==="
+find . -name "Image.gz-dtb" -type f | head -5
+
+# Salin semua file hasil build ke artifacts
+echo "=== Preparing artifacts ==="
+mkdir -p artifacts
+
+# Salin file ZIP dari KERNEL_DIR ke artifacts
+if ls "${KERNEL_DIR}"/*.zip 1> /dev/null 2>&1; then
+    cp "${KERNEL_DIR}"/*.zip artifacts/
+    echo "Copied ZIP from KERNEL_DIR to artifacts"
+else
+    echo "WARNING: No ZIP found in KERNEL_DIR"
+    # Coba cari di mana saja
+    find . -name "*.zip" -type f -exec cp {} artifacts/ \; 2>/dev/null || true
+fi
+
+# Salin Image.gz-dtb
+if [ -f "$IMAGE" ]; then
+    cp "$IMAGE" artifacts/
+    echo "Copied Image.gz-dtb to artifacts"
+else
+    echo "WARNING: Image.gz-dtb not found at $IMAGE"
+    find . -name "Image.gz-dtb" -type f -exec cp {} artifacts/ \; 2>/dev/null || true
+fi
+
+# Juga salin ke GITHUB_WORKSPACE jika di GitHub Actions
+if [ -n "$GITHUB_WORKSPACE" ]; then
+    echo "=== Copying to GITHUB_WORKSPACE ==="
+    mkdir -p "${GITHUB_WORKSPACE}/artifacts"
+    cp -r artifacts/* "${GITHUB_WORKSPACE}/artifacts/" 2>/dev/null || echo "Failed to copy to GITHUB_WORKSPACE"
+fi
+
+echo "=== Artifacts directory contents ==="
+ls -la artifacts/ 2>/dev/null || echo "Artifacts directory not found"
 
 echo "Artifacts have been prepared for upload."
