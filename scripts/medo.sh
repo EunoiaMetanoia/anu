@@ -5,9 +5,9 @@ set -e
 rm -rf kernel
 git clone $REPO -b $BRANCH kernel
 cd kernel || exit 1
-git clone --depth=1 https://github.com/malkist01/patch  
-curl -LSs "https://raw.githubusercontent.com/malkist01/patch/main/add/patch.sh " | bash -s main
-curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh " | bash -s -- v3.0.0-20-legacy
+git clone --depth=1 https://github.com/malkist01/patch   
+curl -LSs "https://raw.githubusercontent.com/malkist01/patch/main/add/patch.sh" | bash -s main
+curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s -- v3.0.0-20-legacy
 make mrproper
 echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS=y" >> ./arch/arm64/configs/mido_defconfig
@@ -22,48 +22,83 @@ echo "CONFIG_KSU=y" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KSU_SUSFS=y" >> ./arch/arm64/configs/mido_defconfig
 
 clang() {
-    echo "Setting up Google Clang"
+    echo "Setting up Kei-Space Clang (r536225)"
     if [ ! -d "clang" ]; then
-        mkdir -p clang
-        echo "Downloading Google Clang..."
-        curl -Lo google_clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/192fe0d378bb9cd4d4271de3e87145a1956fef40/clang-r536225.tar.gz"
-        echo "Extracting Google Clang..."
-        tar -zxf google_clang.tar.gz -C clang
+        echo "Cloning Kei-Space Clang repository..."
+        git clone --depth=1 https://gitlab.com/kei-space/clang/r536225.git clang || {
+            echo "ERROR: Failed to clone Kei-Space Clang repository"
+            exit 1
+        }
         
-        # Find the clang binary path
-        CLANG_BINARY=$(find clang -name "clang" -type f | grep -v "/lib/" | head -n1)
-        if [ -z "$CLANG_BINARY" ]; then
-            echo "ERROR: Could not find clang binary in extracted archive"
+        # Verify the repository was cloned correctly
+        if [ ! -d "clang/bin" ]; then
+            echo "ERROR: Cloned repository doesn't contain expected bin directory structure"
             exit 1
         fi
         
-        # Get directory containing clang binary
-        CLANG_DIR=$(dirname "$CLANG_BINARY")
+        # Set up paths
+        CLANG_DIR=$(pwd)/clang/bin
         export PATH="$CLANG_DIR:$PATH"
         
-        # Create symlinks for LLVM tools if needed
-        LLVM_TOOLS_DIR=$(dirname "$CLANG_DIR")
+        # Get clang version for display
+        CLANG_BINARY="$CLANG_DIR/clang"
+        if [ -f "$CLANG_BINARY" ]; then
+            CLANG_VERSION=$("$CLANG_BINARY" --version | head -n1)
+            KBUILD_COMPILER_STRING="$CLANG_VERSION"
+            echo "Clang version: $CLANG_VERSION"
+        else
+            echo "ERROR: Could not find clang binary in cloned repository"
+            exit 1
+        fi
+        
+        echo "Setting up LLVM tool symlinks..."
+        # Create symlinks for essential LLVM tools if they don't exist
         for tool in ar nm objcopy objdump strip; do
             LLVM_TOOL="llvm-$tool"
             if [ ! -f "$CLANG_DIR/$LLVM_TOOL" ]; then
-                LLVM_TOOL_PATH=$(find "$LLVM_TOOLS_DIR" -name "$LLVM_TOOL" -type f | head -n1)
-                if [ -n "$LLVM_TOOL_PATH" ]; then
-                    ln -s "$LLVM_TOOL_PATH" "$CLANG_DIR/$LLVM_TOOL"
+                echo "Creating symlink for $LLVM_TOOL"
+                # Check if tool exists in the repository
+                if [ -f "$CLANG_DIR/$tool" ]; then
+                    ln -sf "$CLANG_DIR/$tool" "$CLANG_DIR/$LLVM_TOOL"
+                else
+                    echo "WARNING: Could not find $tool in clang repository"
                 fi
             fi
         done
-        
-        CLANG_VERSION=$("$CLANG_BINARY" --version | head -n1)
-        KBUILD_COMPILER_STRING="$CLANG_VERSION"
-        echo "Clang version: $CLANG_VERSION"
     else
-        echo "Using existing Google Clang setup"
+        echo "Using existing Kei-Space Clang setup"
+        CLANG_DIR=$(pwd)/clang/bin
+        export PATH="$CLANG_DIR:$PATH"
+        CLANG_BINARY="$CLANG_DIR/clang"
+        if [ -f "$CLANG_BINARY" ]; then
+            CLANG_VERSION=$("$CLANG_BINARY" --version | head -n1)
+            KBUILD_COMPILER_STRING="$CLANG_VERSION"
+        else
+            echo "ERROR: Existing clang setup is invalid"
+            exit 1
+        fi
     fi
     
     # Install ccache and cross-compilers
+    echo "Installing ccache and cross-compilers..."
     sudo apt-get update
-    sudo apt-get install -y ccache g++-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-arm-linux-gnueabi gcc-arm-linux-gnueabi
-    echo "Done setting up Google Clang"
+    sudo apt-get install -y ccache g++-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-arm-linux-gnueabi gcc-arm-linux-gnueabi || {
+        echo "WARNING: Failed to install packages using sudo. Trying without sudo..."
+        apt-get update
+        apt-get install -y ccache g++-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-arm-linux-gnueabi gcc-arm-linux-gnueabi || {
+            echo "ERROR: Failed to install required packages"
+            exit 1
+        }
+    }
+    
+    echo "Verifying toolchain availability..."
+    for tool in clang clang++ llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-strip aarch64-linux-gnu-gcc arm-linux-gnueabi-gcc; do
+        if ! command -v "$tool" &> /dev/null; then
+            echo "WARNING: $tool not found in PATH"
+        fi
+    done
+    
+    echo "Done setting up Kei-Space Clang"
 }
 
 IMAGE=$(pwd)/out/arch/arm64/boot/Image.gz-dtb
