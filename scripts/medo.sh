@@ -5,8 +5,6 @@ set -e
 rm -rf kernel
 git clone $REPO -b $BRANCH kernel
 cd kernel || exit 1
-git clone --depth=1 https://github.com/malkist01/patch   
-curl -LSs "https://raw.githubusercontent.com/malkist01/patch/main/add/patch.sh" | bash -s main
 curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s -- v3.0.0-20-legacy
 make mrproper
 echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
