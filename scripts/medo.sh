@@ -160,14 +160,32 @@ show_build_info() {
 ╚═════════════════════════════════════════════╝"
 }
 
-# Compile kernel
+# Compile kernel (dengan perbaikan error handling dan logging)
 compile() {
     mkdir -p out
     
     echo "Starting compilation with config: ${DEFCONFIG}"
     make O=out ARCH="${ARCH}" "${DEFCONFIG}" || error_exit "defconfig"
     
+    # Verify the config was generated correctly
+    if [ ! -f "out/.config" ]; then
+        echo "ERROR: Kernel config was not generated properly"
+        error_exit "config generation"
+    fi
+    
+    echo "Verifying CONFIG_KSU is enabled in the config..."
+    if ! grep -q "CONFIG_KSU=y" out/.config; then
+        echo "ERROR: CONFIG_KSU is not enabled in the kernel config"
+        error_exit "ksu config"
+    fi
+    
     echo "Building kernel with ${PROCS} threads..."
+    echo "Make command: make -j${PROCS} O=out ARCH=$ARCH CC=clang LLVM=1 LLVM_IAS=1"
+    
+    # Use pipefail to catch errors in piped commands
+    set -o pipefail
+    
+    # Build with verbose output to catch errors
     make -j"${PROCS}" O=out \
          ARCH=$ARCH \
          CC=clang \
@@ -182,10 +200,19 @@ compile() {
          LLVM=1 \
          LLVM_IAS=1 \
          CROSS_COMPILE=aarch64-linux-gnu- \
-         CROSS_COMPILE_ARM32=arm-linux-gnueabi- || error_exit "compilation"
+         CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+         2>&1 | tee build.log || {
+            echo "ERROR: Kernel compilation failed. Check build.log for details."
+            # Show last 50 lines of the build log for immediate debugging
+            echo "Last 50 lines of build.log:"
+            tail -n 50 build.log
+            error_exit "compilation"
+         }
     
-    if ! [ -f "$IMAGE" ]; then
+    if [ ! -f "$IMAGE" ]; then
         echo "ERROR: Kernel image not found at $IMAGE"
+        echo "Checking for possible image locations..."
+        find out -name "Image*" -type f
         error_exit "image not found"
     fi
     
@@ -212,6 +239,11 @@ zipping() {
     # Move the kernel image to artifacts as well
     mkdir -p "${KERNEL_DIR}/artifacts"
     cp "$IMAGE" "${KERNEL_DIR}/artifacts/" || error_exit "copy image to artifacts"
+    
+    # Copy build log to artifacts for debugging
+    if [ -f build.log ]; then
+        cp build.log "${KERNEL_DIR}/artifacts/"
+    fi
 }
 
 # Main execution
@@ -230,6 +262,7 @@ if [ -n "${GITHUB_ENV+x}" ]; then
     echo "ARTIFACT_PATH=${KERNEL_DIR}/artifacts" >> $GITHUB_ENV
     echo "ZIP_NAME=$(ls ${KERNEL_DIR}/artifacts/*.zip)" >> $GITHUB_ENV
     echo "IMAGE_NAME=$(ls ${KERNEL_DIR}/artifacts/Image.gz-dtb)" >> $GITHUB_ENV
+    echo "BUILD_LOG=${KERNEL_DIR}/artifacts/build.log" >> $GITHUB_ENV
 fi
 
 echo "Artifacts have been prepared for upload directly from AnyKernel."
