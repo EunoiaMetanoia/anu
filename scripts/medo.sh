@@ -91,14 +91,6 @@ compile() {
 
     make O=out ARCH="${ARCH}" "${DEFCONFIG}"
     
-    # Gunakan clang dari PATH jika ada, jika tidak gunakan system clang
-    if command -v clang >/dev/null 2>&1; then
-        CC_CMD="clang"
-        CXX_CMD="clang++"
-    else
-        CC_CMD="clang-14"
-        CXX_CMD="clang++-14"
-    fi
     
     make -j"${PROCS}" O=out \
          ARCH=$ARCH \
