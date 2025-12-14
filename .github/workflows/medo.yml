@@ -31,8 +31,6 @@ jobs:
 
       - name: Initializing environment
         run: |
-          git config --global user.name "malkist01"
-          git config --global user.email "aripujiyanto0812@gmail.com"
           git clone https://github.com/akhilnarang/scripts x
           cd x/setup && bash android_build_env.sh
 
