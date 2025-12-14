@@ -79,22 +79,39 @@ clang() {
         fi
     fi
     
-    # Install ccache and cross-compilers
+    # Install ccache and cross-compilers with proper non-interactive mode
     echo "Installing ccache and cross-compilers..."
-    sudo apt-get update
-    sudo apt-get install -y ccache g++-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-arm-linux-gnueabi gcc-arm-linux-gnueabi || {
+    DEBIAN_FRONTEND=noninteractive sudo apt-get update -q
+    DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -q ccache g++-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-arm-linux-gnueabi gcc-arm-linux-gnueabi || {
         echo "WARNING: Failed to install packages using sudo. Trying without sudo..."
-        apt-get update
-        apt-get install -y ccache g++-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-arm-linux-gnueabi gcc-arm-linux-gnueabi || {
+        DEBIAN_FRONTEND=noninteractive apt-get update -q
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q ccache g++-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-arm-linux-gnueabi gcc-arm-linux-gnueabi || {
             echo "ERROR: Failed to install required packages"
             exit 1
         }
     }
     
+    # Setup ccache after installation
+    echo "Setting up ccache..."
+    export USE_CCACHE=1
+    export CCACHE_DIR="${HOME}/.ccache"
+    mkdir -p "${CCACHE_DIR}"
+    ccache -M 100G || {
+        echo "WARNING: Failed to set ccache size initially. Trying again..."
+        ccache -M 100G || {
+            echo "ERROR: Failed to initialize ccache after multiple attempts"
+            exit 1
+        }
+    }
+    export CCACHE_COMPRESS=1
+    export CCACHE_COMPRESSLEVEL=6
+    
     echo "Verifying toolchain availability..."
     for tool in clang clang++ llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-strip aarch64-linux-gnu-gcc arm-linux-gnueabi-gcc; do
         if ! command -v "$tool" &> /dev/null; then
             echo "WARNING: $tool not found in PATH"
+        else
+            echo "✓ $tool found"
         fi
     done
     
@@ -105,13 +122,6 @@ IMAGE=$(pwd)/out/arch/arm64/boot/Image.gz-dtb
 DATE=$(date +"%Y%m%d-%H%M")
 START=$(date +"%s")
 KERNEL_DIR=$(pwd)
-
-# Ccache setup
-export USE_CCACHE=1
-export CCACHE_DIR="${HOME}/.ccache"
-ccache -M 100G
-export CCACHE_COMPRESS=1
-export CCACHE_COMPRESSLEVEL=6
 
 export TZ=Asia/Jakarta
 
@@ -160,7 +170,7 @@ show_build_info() {
 ╚═════════════════════════════════════════════╝"
 }
 
-# Compile kernel (dengan perbaikan error handling dan logging)
+# Compile kernel
 compile() {
     mkdir -p out
     
@@ -180,7 +190,6 @@ compile() {
     fi
     
     echo "Building kernel with ${PROCS} threads..."
-    echo "Make command: make -j${PROCS} O=out ARCH=$ARCH CC=clang LLVM=1 LLVM_IAS=1"
     
     # Use pipefail to catch errors in piped commands
     set -o pipefail
@@ -212,7 +221,7 @@ compile() {
     if [ ! -f "$IMAGE" ]; then
         echo "ERROR: Kernel image not found at $IMAGE"
         echo "Checking for possible image locations..."
-        find out -name "Image*" -type f
+        find out -name "Image*" -type f -ls
         error_exit "image not found"
     fi
     
@@ -260,8 +269,8 @@ echo "Kernel ZIP file is ready at: ${KERNEL_DIR}/artifacts/*.zip"
 # Output artifact paths for GitHub Actions
 if [ -n "${GITHUB_ENV+x}" ]; then
     echo "ARTIFACT_PATH=${KERNEL_DIR}/artifacts" >> $GITHUB_ENV
-    echo "ZIP_NAME=$(ls ${KERNEL_DIR}/artifacts/*.zip)" >> $GITHUB_ENV
-    echo "IMAGE_NAME=$(ls ${KERNEL_DIR}/artifacts/Image.gz-dtb)" >> $GITHUB_ENV
+    echo "ZIP_NAME=$(ls ${KERNEL_DIR}/artifacts/*.zip 2>/dev/null || echo 'not found')" >> $GITHUB_ENV
+    echo "IMAGE_NAME=$(ls ${KERNEL_DIR}/artifacts/Image.gz-dtb 2>/dev/null || echo 'not found')" >> $GITHUB_ENV
     echo "BUILD_LOG=${KERNEL_DIR}/artifacts/build.log" >> $GITHUB_ENV
 fi
 
