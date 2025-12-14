@@ -9,11 +9,11 @@ on:
           required: true
       repo:
           description: 'Kernel source'
-          default: 'https://github.com/EunoiaMetanoia/med.git'
+          default: 'https://github.com/EunoiaMetanoia/android_kernel_xiaomi_mido.git'
           required: true
       branch:
           description: 'Kernel source branch'
-          default: 'fourteen'
+          default: 'lineage-22.0'
           required: true
 env:
   TZ: Asia/Jakarta
@@ -64,7 +64,7 @@ jobs:
             kernel/artifacts/
             **/*.zip
             **/Image.gz-dtb
-          retention-days: 30
+          retention-days: 7
           if-no-files-found: warn
 
       - name: Display build info
