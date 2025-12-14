@@ -16,15 +16,17 @@ echo "CONFIG_LOCAL_VERSION=-AfterMidniht" >> ./arch/arm64/configs/mido_defconfig
 echo "# CONFIG_LOCAL_VERSION_AUTO is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_BY=After" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_HOST=Midnight" >> ./arch/arm64/configs/mido_defconfig
+echo "# CONFIG_CC_STACKPROTECTOR_STRONG is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "Adding CONFIG_KSU.."
 echo "CONFIG_KSU=y" >> ./arch/arm64/configs/mido_defconfig
+echo "CONFIG_KSU_SUSFS=y" >> ./arch/arm64/configs/mido_defconfig
 
 clang() {
     echo "Setting up Google Clang"
     if [ ! -d "clang" ]; then
         mkdir -p clang
         echo "Downloading Google Clang..."
-        curl -Lo google_clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/192fe0d378bb9cd4d4271de3e87145a1956fef40.tar.gz"
+        curl -Lo google_clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/192fe0d378bb9cd4d4271de3e87145a1956fef40/clang-r536225.tar.gz"
         echo "Extracting Google Clang..."
         tar -zxf google_clang.tar.gz -C clang
         
