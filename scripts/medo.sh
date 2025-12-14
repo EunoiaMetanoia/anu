@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
+
+# Set environment variables jika belum diset
+if [ -z "$REPO" ]; then
+    echo "Error: REPO environment variable is not set!"
+    exit 1
+fi
+
+if [ -z "$BRANCH" ]; then
+    echo "Error: BRANCH environment variable is not set!"
+    exit 1
+fi
+
 # Dependencies
 rm -rf kernel
-git clone $REPO -b $BRANCH kernel
+git clone "$REPO" -b "$BRANCH" kernel
 cd kernel
+
+# Setup KernelSU
 curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s v3.0.0-20-legacy
 make mrproper
+
+# Konfigurasi kernel
 echo "# CONFIG_CC_STACKPROTECTOR_STRONG is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS=y" >> ./arch/arm64/configs/mido_defconfig
@@ -17,33 +33,61 @@ echo "Adding CONFIG_KSU.."
 echo "CONFIG_KSU=y" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KSU_MANUAL_HOOK=y" >> ./arch/arm64/configs/mido_defconfig
 
-# Install dependencies
-sudo apt update
-sudo apt install -y bc build-essential libncurses-dev libssl-dev flex bison
-
-clang() {
-    echo "Cloning clang"
+# Setup Clang dari Google AOSP
+setup_clang() {
+    echo "Setting up Clang from Google AOSP..."
+    
     if [ ! -d "clang" ]; then
-        mkdir -p "clang"
-        curl -Lo WeebX-Clang-20.0.0git.tar.gz "https://github.com/XSans0/WeebX-Clang/releases/download/WeebX-Clang-20.0.0git-release/WeebX-Clang-20.0.0git.tar.gz"
-        if [ -f "WeebX-Clang-20.0.0git.tar.gz" ]; then
-            tar -zxf WeebX-Clang-20.0.0git.tar.gz -C "clang" --strip-components=1
-        else
-            echo "Failed to download clang, using system clang"
-            sudo apt install -y clang llvm lld
+        mkdir -p clang
+        echo "Downloading AOSP Clang r536225..."
+        
+        # Download clang dari Google AOSP
+        wget -q --show-progress "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/192fe0d378bb9cd4d4271de3e87145a1956fef40/clang-r536225.tar.gz" -O clang.tar.gz
+        
+        if [ $? -ne 0 ]; then
+            echo "Failed to download clang. Trying with curl..."
+            curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/192fe0d378bb9cd4d4271de3e87145a1956fef40/clang-r536225.tar.gz" -o clang.tar.gz
         fi
-        KBUILD_COMPILER_STRING="WeebX-Clang"
-        export PATH="${PWD}/clang/bin:${PATH}"
+        
+        if [ -f "clang.tar.gz" ]; then
+            echo "Extracting clang..."
+            tar -xzf clang.tar.gz -C clang
+            rm -f clang.tar.gz
+            
+            # Verifikasi clang
+            if [ -f "clang/bin/clang" ]; then
+                echo "Clang extracted successfully!"
+            else
+                echo "Warning: Clang binary not found in expected location."
+                echo "Searching for clang binary..."
+                find clang -name "clang" -type f | head -5
+            fi
+        else
+            echo "Error: Failed to download clang archive!"
+            exit 1
+        fi
     fi
-    sudo apt install -y ccache
-    echo "Done"
+    
+    # Install LLVM tools dan dependencies
+    echo "Installing dependencies..."
+    sudo apt update
+    sudo apt install -y ccache llvm lld binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+    
+    # Setup environment variables
+    export PATH="${PWD}/clang/bin:${PATH}"
+    export KBUILD_COMPILER_STRING="AOSP-Clang-r536225"
+    
+    echo "Clang setup complete. Version:"
+    "${PWD}/clang/bin/clang" --version 2>/dev/null || echo "Could not get clang version"
 }
 
+# Variabel build
 IMAGE=$(pwd)/out/arch/arm64/boot/Image.gz-dtb
 DATE=$(date +"%Y%m%d-%H%M")
 START=$(date +"%s")
 KERNEL_DIR=$(pwd)
-# Ccache
+
+# Ccache configuration
 export USE_CCACHE=1
 export CCACHE_COMPILER_CHECK="%compiler% -dumpversion"
 export CCACHE_MAXFILES="0"
@@ -55,8 +99,9 @@ export CCACHE_NOINODECACHE="true"
 export CCACHE_COMPILERTYPE="auto"
 export CCACHE_RUN_SECOND_CPP="true"
 export CCACHE_SLOPPINESS="file_macro,time_macros,include_file_mtime,include_file_ctime,file_stat_matches"
+
+# Build environment
 export TZ=Asia/Jakarta
-export KBUILD_COMPILER_STRING
 ARCH=arm64
 export ARCH
 KBUILD_BUILD_HOST="Midnight"
@@ -75,74 +120,100 @@ PROCS=$(nproc --all)
 export PROCS
 STATUS=STABLE
 export STATUS
-source "${HOME}"/.bashrc && source "${HOME}"/.profile
-if [ "$CACHE" = "1" ]; then
-    ccache -M 100G
-    export USE_CCACHE=1
-fi
 LC_ALL=C
 export LC_ALL
 
-# Compile
-compile() {
-    if [ -d "out" ]; then
-        rm -rf out && mkdir -p out
-    fi
+# Setup ccache jika CACHE=1
+if [ "${CACHE:-0}" = "1" ]; then
+    ccache -M 100G
+    export USE_CCACHE=1
+fi
 
+# Compile kernel
+compile() {
+    echo "Starting kernel compilation..."
+    
+    if [ -d "out" ]; then
+        rm -rf out
+    fi
+    mkdir -p out
+    
+    # Buat konfigurasi
     make O=out ARCH="${ARCH}" "${DEFCONFIG}"
     
+    # Verifikasi toolchain
+    echo "Verifying toolchain..."
+    command -v clang >/dev/null 2>&1 || { echo "Clang not found in PATH!"; exit 1; }
+    command -v ld.lld >/dev/null 2>&1 || { echo "ld.lld not found!"; exit 1; }
     
+    # Build kernel dengan LLVM tools
     make -j"${PROCS}" O=out \
-         ARCH=$ARCH \
-         CC="$CC_CMD" \
-         CXX="$CXX_CMD" \
-         HOSTCC="$CC_CMD" \
-         HOSTCXX="$CXX_CMD" \
-         AR=llvm-ar \
-         AS=llvm-as \
-         NM=llvm-nm \
-         OBJCOPY=llvm-objcopy \
-         OBJDUMP=llvm-objdump \
-         STRIP=llvm-strip \
+         ARCH="$ARCH" \
+         CC="clang" \
+         CXX="clang++" \
+         HOSTCC="clang" \
+         HOSTCXX="clang++" \
+         AR="llvm-ar" \
+         AS="llvm-as" \
+         NM="llvm-nm" \
+         OBJCOPY="llvm-objcopy" \
+         OBJDUMP="llvm-objdump" \
+         STRIP="llvm-strip" \
+         LD="ld.lld" \
          LLVM=1 \
-        CROSS_COMPILE=aarch64-linux-gnu- \
-        CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+         LLVM_IAS=1 \
+         CROSS_COMPILE="aarch64-linux-gnu-" \
+         CROSS_COMPILE_ARM32="arm-linux-gnueabi-"
 
-    if ! [ -a "$IMAGE" ]; then
+    # Cek apakah kernel berhasil dibangun
+    if [ ! -f "$IMAGE" ]; then
         echo "ERROR: Kernel image was not built successfully!"
+        echo "Build log errors:"
+        tail -50 out/.config >&2 || true
         exit 1
     fi
 
-    git clone --depth=1 https://github.com/EunoiaMetanoia/AnyKernel3.git AnyKernel -b master
-    cp out/arch/arm64/boot/Image.gz-dtb AnyKernel
+    echo "Kernel built successfully!"
+    
+    # Clone AnyKernel3
+    if [ ! -d "AnyKernel" ]; then
+        git clone --depth=1 https://github.com/EunoiaMetanoia/AnyKernel3.git AnyKernel -b master
+    fi
+    
+    cp "$IMAGE" AnyKernel/
+    echo "Kernel image copied to AnyKernel/"
 }
 
-# Zipping
+# Zipping kernel
 zipping() {
     cd AnyKernel || exit 1
     ZIP_NAME="AfterMidnight-${BRANCH}-${CODENAME}-${DATE}.zip"
     zip -r9 "$ZIP_NAME" ./*
-    # Copy the zip to a location that can be easily accessed by GitHub Actions
     mkdir -p ../artifacts
     cp "$ZIP_NAME" ../artifacts/
     echo "Kernel zip created at: ../artifacts/$ZIP_NAME"
     cd ..
-    # Output the path for GitHub Actions to use
-    echo "ARTIFACT_PATH=artifacts/$ZIP_NAME" >> $GITHUB_ENV
+    
+    # Output untuk GitHub Actions
+    if [ -n "${GITHUB_ENV+x}" ]; then
+        echo "ARTIFACT_PATH=artifacts/$ZIP_NAME" >> "$GITHUB_ENV"
+    fi
 }
 
-clang
+# Main execution
+setup_clang
 compile
 zipping
+
 END=$(date +"%s")
 DIFF=$((END - START))
 echo "Build completed in $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)."
 
 # Output artifact paths for GitHub Actions
 if [ -n "${GITHUB_ENV+x}" ]; then
-    echo "ARTIFACT_PATH=${KERNEL_DIR}/artifacts" >> $GITHUB_ENV
-    echo "ZIP_NAME=$(ls ${KERNEL_DIR}/artifacts/*.zip 2>/dev/null || echo 'not found')" >> $GITHUB_ENV
-    echo "BUILD_LOG=${KERNEL_DIR}/artifacts/build.log" >> $GITHUB_ENV
+    echo "ARTIFACT_PATH=${KERNEL_DIR}/artifacts" >> "$GITHUB_ENV"
+    echo "ZIP_NAME=$(ls ${KERNEL_DIR}/artifacts/*.zip 2>/dev/null || echo 'not found')" >> "$GITHUB_ENV"
+    echo "BUILD_LOG=${KERNEL_DIR}/artifacts/build.log" >> "$GITHUB_ENV"
 fi
 
 echo "Artifacts have been prepared for upload directly from AnyKernel."
