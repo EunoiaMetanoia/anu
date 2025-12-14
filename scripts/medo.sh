@@ -3,7 +3,7 @@
 rm -rf kernel
 git clone $REPO -b $BRANCH kernel
 cd kernel
-curl -LSs curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s v3.0.0-20-legacy
+curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s v3.0.0-20-legacy
 make mrproper
 echo "# CONFIG_CC_STACKPROTECTOR_STRONG is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
@@ -17,14 +17,23 @@ echo "Adding CONFIG_KSU.."
 echo "CONFIG_KSU=y" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KSU_MANUAL_HOOK=y" >> ./arch/arm64/configs/mido_defconfig
 
+# Install dependencies
+sudo apt update
+sudo apt install -y bc build-essential libncurses-dev libssl-dev flex bison
+
 clang() {
     echo "Cloning clang"
     if [ ! -d "clang" ]; then
-      mkdir -p "clang"
-      curl -Lo WeebX-Clang-20.0.0git.tar.gz "https://github.com/XSans0/WeebX-Clang/releases/download/WeebX-Clang-20.0.0git-release/WeebX-Clang-20.0.0git.tar.gz "
-      tar -zxf WeebX-Clang-20.0.0git.tar.gz -C "clang" --strip-components=1
+        mkdir -p "clang"
+        curl -Lo WeebX-Clang-20.0.0git.tar.gz "https://github.com/XSans0/WeebX-Clang/releases/download/WeebX-Clang-20.0.0git-release/WeebX-Clang-20.0.0git.tar.gz"
+        if [ -f "WeebX-Clang-20.0.0git.tar.gz" ]; then
+            tar -zxf WeebX-Clang-20.0.0git.tar.gz -C "clang" --strip-components=1
+        else
+            echo "Failed to download clang, using system clang"
+            sudo apt install -y clang llvm lld
+        fi
         KBUILD_COMPILER_STRING="WeebX-Clang"
-        PATH="${PWD}/clang/bin:${PATH}"
+        export PATH="${PWD}/clang/bin:${PATH}"
     fi
     sudo apt install -y ccache
     echo "Done"
@@ -34,7 +43,7 @@ IMAGE=$(pwd)/out/arch/arm64/boot/Image.gz-dtb
 DATE=$(date +"%Y%m%d-%H%M")
 START=$(date +"%s")
 KERNEL_DIR=$(pwd)
-#Ccache
+# Ccache
 export USE_CCACHE=1
 export CCACHE_COMPILER_CHECK="%compiler% -dumpversion"
 export CCACHE_MAXFILES="0"
@@ -67,7 +76,7 @@ export PROCS
 STATUS=STABLE
 export STATUS
 source "${HOME}"/.bashrc && source "${HOME}"/.profile
-if [ $CACHE = 1 ]; then
+if [ "$CACHE" = "1" ]; then
     ccache -M 100G
     export USE_CCACHE=1
 fi
@@ -81,12 +90,22 @@ compile() {
     fi
 
     make O=out ARCH="${ARCH}" "${DEFCONFIG}"
+    
+    # Gunakan clang dari PATH jika ada, jika tidak gunakan system clang
+    if command -v clang >/dev/null 2>&1; then
+        CC_CMD="clang"
+        CXX_CMD="clang++"
+    else
+        CC_CMD="clang-14"
+        CXX_CMD="clang++-14"
+    fi
+    
     make -j"${PROCS}" O=out \
          ARCH=$ARCH \
-         CC="clang" \
-         CXX="clang++" \
-         HOSTCC="clang" \
-         HOSTCXX="clang++" \
+         CC="$CC_CMD" \
+         CXX="$CXX_CMD" \
+         HOSTCC="$CC_CMD" \
+         HOSTCXX="$CXX_CMD" \
          AR=llvm-ar \
          AS=llvm-as \
          NM=llvm-nm \
