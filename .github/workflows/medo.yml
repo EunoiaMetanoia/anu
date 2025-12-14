@@ -29,7 +29,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      steps:
       - name: Initializing environment
         run: |
           git config --global user.name "malkist01"
@@ -41,23 +40,20 @@ jobs:
         id: compile
         run: |
           if [ "${DEVICE}" = "mido" ]; then
-            wget -q https://raw.githubusercontent.com/EunoiaMetanoia/anu/main/scripts/medo.sh 
+            wget -q https://raw.githubusercontent.com/EunoiaMetanoia/anu/main/scripts/medo.sh  
             chmod +x medo.sh
-            # Capture full build log with real-time output
             ./medo.sh 2>&1 | tee build.log
             exit ${PIPESTATUS[0]}
           else
             echo "Device not supported yet"
             exit 1
           fi
-        continue-on-error: true  # Ensure we capture logs even on failure
+        continue-on-error: true
 
       - name: Verify artifacts
         run: |
           echo "=== Build status: ${{ steps.compile.outcome }} ==="
-          echo "=== Current directory ==="
           pwd
-          echo "=== Listing files ==="
           ls -la
           echo "=== Build log preview (last 20 lines) ==="
           tail -n 20 build.log || echo "No build.log found"
@@ -68,7 +64,7 @@ jobs:
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
-        if: always()  # Always run even if previous steps failed
+        if: always()
         with:
           name: kernel-build-${{ github.run_number }}
           path: |
