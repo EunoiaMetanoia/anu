@@ -1,34 +1,67 @@
 #!/usr/bin/env bash
+set -e
+
 # Dependencies
 rm -rf kernel
 git clone $REPO -b $BRANCH kernel
 cd kernel || exit 1
-git clone --depth=1 https://github.com/malkist01/patch
-curl -LSs "https://raw.githubusercontent.com/malkist01/patch/main/add/patch.sh" | bash -s main
-curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+git clone --depth=1 https://github.com/malkist01/patch  
+curl -LSs "https://raw.githubusercontent.com/malkist01/patch/main/add/patch.sh " | bash -s main
+curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh " | bash -s -- v3.0.0-20-legacy
 make mrproper
 echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS=y" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS_ALL=y" >> ./arch/arm64/configs/mido_defconfig
-echo "CONFIG_LOCAL_VERSION=-AfterMidnight" >> ./arch/arm64/configs/mido_defconfig
+echo "CONFIG_LOCAL_VERSION=-AfterMidniht" >> ./arch/arm64/configs/mido_defconfig
 echo "# CONFIG_LOCAL_VERSION_AUTO is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_BY=After" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_HOST=Midnight" >> ./arch/arm64/configs/mido_defconfig
 echo "Adding CONFIG_KSU.."
 echo "CONFIG_KSU=y" >> ./arch/arm64/configs/mido_defconfig
-echo "CONFIG_KSUSFS=y" >> ./arch/arm64/configs/mido_defconfig
 
 clang() {
-    echo "Cloning clang"
+    echo "Setting up Google Clang"
     if [ ! -d "clang" ]; then
-      mkdir -p "clang"
-      curl -Lo WeebX-Clang-20.0.0git.tar.gz "https://github.com/XSans0/WeebX-Clang/releases/download/WeebX-Clang-20.0.0git-release/WeebX-Clang-20.0.0git.tar.gz"
-      tar -zxf WeebX-Clang-20.0.0git.tar.gz -C "clang" --strip-components=1
-        KBUILD_COMPILER_STRING="WeebX-Clang"
-        PATH="${PWD}/clang/bin:${PATH}"
+        mkdir -p clang
+        echo "Downloading Google Clang..."
+        curl -Lo google_clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/192fe0d378bb9cd4d4271de3e87145a1956fef40.tar.gz"
+        echo "Extracting Google Clang..."
+        tar -zxf google_clang.tar.gz -C clang
+        
+        # Find the clang binary path
+        CLANG_BINARY=$(find clang -name "clang" -type f | grep -v "/lib/" | head -n1)
+        if [ -z "$CLANG_BINARY" ]; then
+            echo "ERROR: Could not find clang binary in extracted archive"
+            exit 1
+        fi
+        
+        # Get directory containing clang binary
+        CLANG_DIR=$(dirname "$CLANG_BINARY")
+        export PATH="$CLANG_DIR:$PATH"
+        
+        # Create symlinks for LLVM tools if needed
+        LLVM_TOOLS_DIR=$(dirname "$CLANG_DIR")
+        for tool in ar nm objcopy objdump strip; do
+            LLVM_TOOL="llvm-$tool"
+            if [ ! -f "$CLANG_DIR/$LLVM_TOOL" ]; then
+                LLVM_TOOL_PATH=$(find "$LLVM_TOOLS_DIR" -name "$LLVM_TOOL" -type f | head -n1)
+                if [ -n "$LLVM_TOOL_PATH" ]; then
+                    ln -s "$LLVM_TOOL_PATH" "$CLANG_DIR/$LLVM_TOOL"
+                fi
+            fi
+        done
+        
+        CLANG_VERSION=$("$CLANG_BINARY" --version | head -n1)
+        KBUILD_COMPILER_STRING="$CLANG_VERSION"
+        echo "Clang version: $CLANG_VERSION"
+    else
+        echo "Using existing Google Clang setup"
     fi
-    sudo apt-get install -y ccache
-    echo "Done"
+    
+    # Install ccache and cross-compilers
+    sudo apt-get update
+    sudo apt-get install -y ccache g++-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-arm-linux-gnueabi gcc-arm-linux-gnueabi
+    echo "Done setting up Google Clang"
 }
 
 IMAGE=$(pwd)/out/arch/arm64/boot/Image.gz-dtb
@@ -38,18 +71,12 @@ KERNEL_DIR=$(pwd)
 
 # Ccache setup
 export USE_CCACHE=1
-export CCACHE_COMPILER_CHECK="%compiler% -dumpversion"
-export CCACHE_MAXFILES="0"
-export CCACHE_NOHASHDIR="true"
-export CCACHE_UMASK="0002"
-export CCACHE_COMPRESSION="true"
-export CCACHE_COMPRESSION_LEVEL="-3"
-export CCACHE_NOINODECACHE="true"
-export CCACHE_COMPILERTYPE="auto"
-export CCACHE_RUN_SECOND_CPP="true"
-export CCACHE_SLOPPINESS="file_macro,time_macros,include_file_mtime,include_file_ctime,file_stat_matches"
+export CCACHE_DIR="${HOME}/.ccache"
+ccache -M 100G
+export CCACHE_COMPRESS=1
+export CCACHE_COMPRESSLEVEL=6
+
 export TZ=Asia/Jakarta
-export KBUILD_COMPILER_STRING
 
 ARCH=arm64
 export ARCH
@@ -69,12 +96,6 @@ PROCS=$(nproc --all)
 export PROCS
 STATUS=STABLE
 export STATUS
-
-# Setup ccache if enabled
-if [ "$CACHE" = 1 ]; then
-    ccache -M 100G
-    export USE_CCACHE=1
-fi
 
 LC_ALL=C
 export LC_ALL
@@ -104,9 +125,6 @@ show_build_info() {
 
 # Compile kernel
 compile() {
-    if [ -d "out" ]; then
-        rm -rf out
-    fi
     mkdir -p out
     
     echo "Starting compilation with config: ${DEFCONFIG}"
@@ -115,19 +133,19 @@ compile() {
     echo "Building kernel with ${PROCS} threads..."
     make -j"${PROCS}" O=out \
          ARCH=$ARCH \
-         CC="clang" \
-         CXX="clang++" \
-         HOSTCC="clang" \
-         HOSTCXX="clang++" \
+         CC=clang \
+         CXX=clang++ \
+         HOSTCC=clang \
+         HOSTCXX=clang++ \
          AR=llvm-ar \
-         AS=llvm-as \
          NM=llvm-nm \
          OBJCOPY=llvm-objcopy \
          OBJDUMP=llvm-objdump \
          STRIP=llvm-strip \
          LLVM=1 \
-        CROSS_COMPILE=aarch64-linux-gnu- \
-        CROSS_COMPILE_ARM32=arm-linux-gnueabi- || error_exit "compilation"
+         LLVM_IAS=1 \
+         CROSS_COMPILE=aarch64-linux-gnu- \
+         CROSS_COMPILE_ARM32=arm-linux-gnueabi- || error_exit "compilation"
     
     if ! [ -f "$IMAGE" ]; then
         echo "ERROR: Kernel image not found at $IMAGE"
@@ -146,18 +164,17 @@ zipping() {
     
     ZIP_NAME="AfterMidnight-${BRANCH}-${CODENAME}-${DATE}.zip"
     echo "Creating flashable ZIP: ${ZIP_NAME}"
-    zip -r9 "${ZIP_NAME}" ./* || error_exit "zip creation"
+    zip -r9 "${ZIP_NAME}" ./* -x ".git*" "README.md" "LICENSE" || error_exit "zip creation"
     
-    # Copy ZIP back to kernel directory
-    cp "${ZIP_NAME}" "${KERNEL_DIR}/" || error_exit "copy zip"
-    
-    # Juga copy ke root workspace untuk GitHub Actions
-    if [ -n "$GITHUB_WORKSPACE" ]; then
-        mkdir -p "${GITHUB_WORKSPACE}/artifacts"
-        cp "${ZIP_NAME}" "${GITHUB_WORKSPACE}/artifacts/" || echo "Failed to copy to GITHUB_WORKSPACE"
-    fi
+    # Move ZIP directly to artifacts directory for GitHub Actions
+    mkdir -p "${KERNEL_DIR}/artifacts"
+    mv "${ZIP_NAME}" "${KERNEL_DIR}/artifacts/" || error_exit "move zip to artifacts"
     
     cd "${KERNEL_DIR}" || exit 1
+    
+    # Move the kernel image to artifacts as well
+    mkdir -p "${KERNEL_DIR}/artifacts"
+    cp "$IMAGE" "${KERNEL_DIR}/artifacts/" || error_exit "copy image to artifacts"
 }
 
 # Main execution
@@ -169,45 +186,13 @@ zipping || error_exit "zipping function"
 END=$(date +"%s")
 DIFF=$((END - START))
 echo "Build completed in $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)."
+echo "Kernel ZIP file is ready at: ${KERNEL_DIR}/artifacts/*.zip"
 
-# Cari file ZIP yang dibuat
-echo "=== Searching for ZIP files ==="
-find . -name "*.zip" -type f | head -5
-
-echo "=== Searching for Image.gz-dtb ==="
-find . -name "Image.gz-dtb" -type f | head -5
-
-# Salin semua file hasil build ke artifacts
-echo "=== Preparing artifacts ==="
-mkdir -p artifacts
-
-# Salin file ZIP dari KERNEL_DIR ke artifacts
-if ls "${KERNEL_DIR}"/*.zip 1> /dev/null 2>&1; then
-    cp "${KERNEL_DIR}"/*.zip artifacts/
-    echo "Copied ZIP from KERNEL_DIR to artifacts"
-else
-    echo "WARNING: No ZIP found in KERNEL_DIR"
-    # Coba cari di mana saja
-    find . -name "*.zip" -type f -exec cp {} artifacts/ \; 2>/dev/null || true
+# Output artifact paths for GitHub Actions
+if [ -n "${GITHUB_ENV+x}" ]; then
+    echo "ARTIFACT_PATH=${KERNEL_DIR}/artifacts" >> $GITHUB_ENV
+    echo "ZIP_NAME=$(ls ${KERNEL_DIR}/artifacts/*.zip)" >> $GITHUB_ENV
+    echo "IMAGE_NAME=$(ls ${KERNEL_DIR}/artifacts/Image.gz-dtb)" >> $GITHUB_ENV
 fi
 
-# Salin Image.gz-dtb
-if [ -f "$IMAGE" ]; then
-    cp "$IMAGE" artifacts/
-    echo "Copied Image.gz-dtb to artifacts"
-else
-    echo "WARNING: Image.gz-dtb not found at $IMAGE"
-    find . -name "Image.gz-dtb" -type f -exec cp {} artifacts/ \; 2>/dev/null || true
-fi
-
-# Juga salin ke GITHUB_WORKSPACE jika di GitHub Actions
-if [ -n "$GITHUB_WORKSPACE" ]; then
-    echo "=== Copying to GITHUB_WORKSPACE ==="
-    mkdir -p "${GITHUB_WORKSPACE}/artifacts"
-    cp -r artifacts/* "${GITHUB_WORKSPACE}/artifacts/" 2>/dev/null || echo "Failed to copy to GITHUB_WORKSPACE"
-fi
-
-echo "=== Artifacts directory contents ==="
-ls -la artifacts/ 2>/dev/null || echo "Artifacts directory not found"
-
-echo "Artifacts have been prepared for upload."
+echo "Artifacts have been prepared for upload directly from AnyKernel."
