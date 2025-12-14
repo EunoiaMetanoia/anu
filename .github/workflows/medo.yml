@@ -4,17 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       device:
-          description: 'Device'
-          default: 'mido'
-          required: true
+        description: 'Device'
+        default: 'mido'
+        required: true
       repo:
-          description: 'Kernel source'
-          default: 'https://github.com/EunoiaMetanoia/android_kernel_xiaomi_mido.git'
-          required: true
+        description: 'Kernel source'
+        default: 'https://github.com/EunoiaMetanoia/android_kernel_xiaomi_mido.git'
+        required: true
       branch:
-          description: 'Kernel source branch'
-          default: 'lineage-22.0'
-          required: true
+        description: 'Kernel source branch'
+        default: 'lineage-22.0'
+        required: true
+
 env:
   TZ: Asia/Jakarta
   DEVICE: ${{ github.event.inputs.device }}
@@ -24,56 +25,71 @@ env:
 jobs:
   kernel-build:
     runs-on: ubuntu-24.04
-
-    step:  
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          bc bison ca-certificates curl flex gcc git libc6-dev libssl-dev \
-          openssl python-is-python3 ssh wget zip sudo make clang \
-          gcc-arm-linux-gnueabi software-properties-common build-essential \
-          libarchive-tools gcc-aarch64-linux-gnu libssl-dev libffi-dev \
-          libncurses5-dev zlib1g zlib1g-dev libreadline-dev libbz2-dev \
-          libsqlite3-dev make gcc pigz python3 cpio lld
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            bc bison ca-certificates curl flex gcc git libc6-dev libssl-dev \
+            openssl python-is-python3 ssh wget zip sudo make clang \
+            gcc-arm-linux-gnueabi software-properties-common build-essential \
+            libarchive-tools gcc-aarch64-linux-gnu libssl-dev libffi-dev \
+            libncurses5-dev zlib1g zlib1g-dev libreadline-dev libbz2-dev \
+            libsqlite3-dev make gcc pigz python3 cpio lld
 
       - name: Compiling
+        id: compile
         run: |
           if [ "${DEVICE}" = "mido" ]; then
-            wget -q https://raw.githubusercontent.com/EunoiaMetanoia/anu/main/scripts/medo.sh
+            wget -q https://raw.githubusercontent.com/EunoiaMetanoia/anu/main/scripts/medo.sh 
             chmod +x medo.sh
-            bash medo.sh
+            # Capture full build log with real-time output
+            ./medo.sh 2>&1 | tee build.log
+            exit ${PIPESTATUS[0]}
           else
             echo "Device not supported yet"
+            exit 1
           fi
+        continue-on-error: true  # Ensure we capture logs even on failure
 
       - name: Verify artifacts
         run: |
+          echo "=== Build status: ${{ steps.compile.outcome }} ==="
           echo "=== Current directory ==="
           pwd
           echo "=== Listing files ==="
           ls -la
+          echo "=== Build log preview (last 20 lines) ==="
+          tail -n 20 build.log || echo "No build.log found"
           echo "=== Looking for artifacts ==="
-          find . -name "artifacts" -type d | xargs ls -la 2>/dev/null || true
+          find . -name "artifacts" -type d -exec ls -la {} \; 2>/dev/null || true
           echo "=== Looking for ZIP files ==="
           find . -name "*.zip" -type f 2>/dev/null || true
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
+        if: always()  # Always run even if previous steps failed
         with:
-          name: kernel-build
+          name: kernel-build-${{ github.run_number }}
           path: |
             artifacts/
             kernel/artifacts/
             **/*.zip
-            **/Image.gz-dtb
+            build.log
           retention-days: 7
           if-no-files-found: warn
 
       - name: Display build info
+        if: success()
         run: |
-          echo "✅ Build completed!"
-          echo "📦 Check the 'Artifacts' section below to download your kernel"
+          echo "✅ Build completed successfully!"
+          echo "📦 Download artifacts from the 'Summary' page"
+
+      - name: Build failed notification
+        if: failure()
+        run: |
+          echo "❌ Build failed! Check build.log artifact for details"
+          exit 1
