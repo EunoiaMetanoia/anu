@@ -1,4 +1,4 @@
-name: Kernel Build mido
+name: Kernel Build memedo
 
 on:
   workflow_dispatch:
