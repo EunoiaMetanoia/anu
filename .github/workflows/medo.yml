@@ -29,16 +29,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      steps:
+      - name: Initializing environment
         run: |
-          sudo apt update
-          sudo apt install -y \
-            bc bison ca-certificates curl flex gcc git libc6-dev libssl-dev \
-            openssl python-is-python3 ssh wget zip sudo make clang \
-            gcc-arm-linux-gnueabi software-properties-common build-essential \
-            libarchive-tools gcc-aarch64-linux-gnu libssl-dev libffi-dev \
-            libncurses5-dev zlib1g zlib1g-dev libreadline-dev libbz2-dev \
-            libsqlite3-dev make gcc pigz python3 cpio lld
+          git config --global user.name "malkist01"
+          git config --global user.email "aripujiyanto0812@gmail.com"
+          git clone https://github.com/akhilnarang/scripts x
+          cd x/setup && bash android_build_env.sh
 
       - name: Compiling
         id: compile
