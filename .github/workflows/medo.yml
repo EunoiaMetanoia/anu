@@ -9,11 +9,11 @@ on:
         required: true
       repo:
         description: 'Kernel source'
-        default: 'https://github.com/EunoiaMetanoia/android_kernel_xiaomi_mido.git'
+        default: 'https://github.com/EunoiaMetanoia/kmd.git'
         required: true
       branch:
         description: 'Kernel source branch'
-        default: 'lineage-22.0'
+        default: 'main'
         required: true
 
 env:
