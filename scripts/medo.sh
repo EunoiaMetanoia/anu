@@ -17,6 +17,7 @@ git clone "$REPO" -b "$BRANCH" kernel
 cd kernel
 
 # Setup KernelSU
+curl -LSs "https://raw.githubusercontent.com/malkist01/patch/main/add/patch.sh" | bash -s main
 curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s main
 make mrproper
 
