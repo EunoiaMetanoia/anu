@@ -17,11 +17,10 @@ git clone "$REPO" -b "$BRANCH" kernel
 cd kernel
 
 # Setup KernelSU
-curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s v3.0.0-20-legacy
+curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s main
 make mrproper
 
 # Konfigurasi kernel
-echo "# CONFIG_CC_STACKPROTECTOR_STRONG is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS=y" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_KALLSYMS_ALL=y" >> ./arch/arm64/configs/mido_defconfig
