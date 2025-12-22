@@ -9,11 +9,11 @@ on:
         required: true
       repo:
         description: 'Kernel source'
-        default: 'https://github.com/EunoiaMetanoia/kmd.git'
+        default: 'https://github.com/latikusto/memedo.git'
         required: true
       branch:
         description: 'Kernel source branch'
-        default: 'main'
+        default: 'test-su'
         required: true
 
 env:
