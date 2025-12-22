@@ -17,21 +17,14 @@ git clone "$REPO" -b "$BRANCH" kernel
 cd kernel
 
 # Setup KernelSU
-curl -LSs "https://raw.githubusercontent.com/malkist01/patch/main/add/patch.sh" | bash -s main
 curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s main
 make mrproper
 
 # Konfigurasi kernel
-echo "# CONFIG_KPM is not set" >> ./arch/arm64/configs/mido_defconfig
-echo "CONFIG_KALLSYMS=y" >> ./arch/arm64/configs/mido_defconfig
-echo "CONFIG_KALLSYMS_ALL=y" >> ./arch/arm64/configs/mido_defconfig
-echo "CONFIG_LOCAL_VERSION=AfterMidnight" >> ./arch/arm64/configs/mido_defconfig
+echo "CONFIG_LOCAL_VERSION=Chaotic" >> ./arch/arm64/configs/mido_defconfig
 echo "# CONFIG_LOCAL_VERSION_AUTO is not set" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_BY=After" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_HOST=Midnight" >> ./arch/arm64/configs/mido_defconfig
-echo "Adding CONFIG_KSU.."
-echo "CONFIG_KSU=y" >> ./arch/arm64/configs/mido_defconfig
-echo "CONFIG_KSU_MANUAL_HOOK=y" >> ./arch/arm64/configs/mido_defconfig
 
 # Setup Clang dari Google AOSP
 setup_clang() {
