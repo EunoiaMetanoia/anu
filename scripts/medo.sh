@@ -26,39 +26,42 @@ echo "# CONFIG_LOCAL_VERSION_AUTO is not set" >> ./arch/arm64/configs/mido_defco
 echo "CONFIG_LINUX_COMPILE_BY=After" >> ./arch/arm64/configs/mido_defconfig
 echo "CONFIG_LINUX_COMPILE_HOST=Midnight" >> ./arch/arm64/configs/mido_defconfig
 
-# Setup Clang dari Google AOSP
+# Setup Clang dari GitLab
 setup_clang() {
-    echo "Setting up Clang from Google AOSP..."
+    echo "Setting up Clang from GitLab (kei-space/clang/r522817)..."
     
     if [ ! -d "clang" ]; then
-        mkdir -p clang
-        echo "Downloading AOSP Clang r536225..."
+        echo "Cloning Kei-Space Clang r522817..."
         
-        # Download clang dari Google AOSP
-        wget -q --show-progress "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/192fe0d378bb9cd4d4271de3e87145a1956fef40/clang-r536225.tar.gz" -O clang.tar.gz
+        # Clone clang dari GitLab
+        git clone --depth=1 https://gitlab.com/kei-space/clang/r522817.git clang
         
         if [ $? -ne 0 ]; then
-            echo "Failed to download clang. Trying with curl..."
-            curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/192fe0d378bb9cd4d4271de3e87145a1956fef40/clang-r536225.tar.gz" -o clang.tar.gz
-        fi
-        
-        if [ -f "clang.tar.gz" ]; then
-            echo "Extracting clang..."
-            tar -xzf clang.tar.gz -C clang
-            rm -f clang.tar.gz
-            
-            # Verifikasi clang
-            if [ -f "clang/bin/clang" ]; then
-                echo "Clang extracted successfully!"
-            else
-                echo "Warning: Clang binary not found in expected location."
-                echo "Searching for clang binary..."
-                find clang -name "clang" -type f | head -5
-            fi
-        else
-            echo "Error: Failed to download clang archive!"
+            echo "Failed to clone clang repository!"
             exit 1
         fi
+        
+        # Verifikasi clang
+        if [ -f "clang/bin/clang" ]; then
+            echo "Clang setup successfully!"
+        else
+            echo "Searching for clang binary..."
+            # Cari binary clang di dalam folder clang
+            CLANG_BIN=$(find clang -name "clang" -type f | grep -v ".so" | head -1)
+            if [ -n "$CLANG_BIN" ]; then
+                echo "Found clang at: $CLANG_BIN"
+                # Buat symlink jika perlu
+                if [ ! -f "clang/bin/clang" ]; then
+                    mkdir -p clang/bin
+                    ln -sf "$(realpath "$CLANG_BIN")" clang/bin/clang
+                fi
+            else
+                echo "Error: Could not find clang binary in the repository!"
+                exit 1
+            fi
+        fi
+    else
+        echo "Clang directory already exists, skipping clone..."
     fi
     
     # Install LLVM tools dan dependencies
@@ -68,10 +71,19 @@ setup_clang() {
     
     # Setup environment variables
     export PATH="${PWD}/clang/bin:${PATH}"
-    export KBUILD_COMPILER_STRING="AOSP-Clang-r536225"
+    export KBUILD_COMPILER_STRING="Kei-Clang-r522817"
     
     echo "Clang setup complete. Version:"
-    "${PWD}/clang/bin/clang" --version 2>/dev/null || echo "Could not get clang version"
+    "${PWD}/clang/bin/clang" --version 2>/dev/null || {
+        echo "Trying to find and use available clang binary..."
+        # Coba cari clang di PATH atau di folder clang
+        FOUND_CLANG=$(which clang 2>/dev/null || find "${PWD}/clang" -name "clang" -type f | head -1)
+        if [ -n "$FOUND_CLANG" ] && [ -x "$FOUND_CLANG" ]; then
+            "$FOUND_CLANG" --version 2>/dev/null || echo "Could not get clang version"
+        else
+            echo "Could not get clang version"
+        fi
+    }
 }
 
 # Variabel build
@@ -136,7 +148,28 @@ compile() {
     
     # Verifikasi toolchain
     echo "Verifying toolchain..."
-    command -v clang >/dev/null 2>&1 || { echo "Clang not found in PATH!"; exit 1; }
+    
+    # Cari clang di PATH
+    if ! command -v clang >/dev/null 2>&1; then
+        echo "Clang not found in PATH! Searching in clang directory..."
+        # Cari clang di folder clang
+        CLANG_PATH=$(find "${PWD}/clang" -name "clang" -type f -executable | head -1)
+        if [ -n "$CLANG_PATH" ]; then
+            echo "Found clang at: $CLANG_PATH"
+            # Tambahkan ke PATH
+            export PATH="${PWD}/clang/bin:${PATH}"
+            # Buat symlink jika belum ada
+            if [ ! -f "clang/bin/clang" ]; then
+                mkdir -p clang/bin
+                ln -sf "$CLANG_PATH" clang/bin/clang
+                ln -sf "$(dirname "$CLANG_PATH")/clang++" clang/bin/clang++ 2>/dev/null || true
+            fi
+        else
+            echo "Error: Clang not found!"
+            exit 1
+        fi
+    fi
+    
     command -v ld.lld >/dev/null 2>&1 || { echo "ld.lld not found!"; exit 1; }
     
     # Build kernel dengan LLVM tools
